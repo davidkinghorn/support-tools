@@ -1,3 +1,5 @@
+This script works on versions: 10.1.3, 10.1.4, 10.1.5.
+
 Use this script to reclaim space in a vSnap storage pool by deleting older
 snapshots that may have been left behind due to problems with the SPP
 Maintenance job.
