@@ -21,18 +21,23 @@ VERSION_1015 = '10.1.5'
 VERSION_1014 = '10.1.4'
 
 cloudcfg = None
-
+archcfg = None
 if VERSION_1016 in CURRENT_VERISON:
     from vsnap.cloud import model as cloudmdl
+    from vsnap.archive import model as archmdl
     cloudcfg = cloudmdl.CloudConfig()
+    archcfg = archmdl.ArchiveConfig()
 elif VERSION_1015 in CURRENT_VERISON or VERSION_1014 in CURRENT_VERISON:
     from vsnap.cloud import config as cloudcfg
+    from vsnap.archive import config as archcfg
 
 
 @click.command(name="reclaim", help="Reclaim space from the cloud partner.")
 @click.option("--partner_id", required=True, help="Partner ID")
 @click.option("--days", "num_days", required=True, help="Retention period in days", type=int)
-def reclaim_space(partner_id, num_days):
+@click.option("--archive", required=False, is_flag=True, help="Cloud bucket is used for archive")
+@click.option("--noprompt", is_flag=True, help="Don't prompt for confirmation.")
+def reclaim_space(partner_id, num_days, archive, noprompt):
     empty_volumes = 0
     expired_volumes = 0
     reclaimed_snapshots = 0
@@ -40,15 +45,16 @@ def reclaim_space(partner_id, num_days):
     volumes_with_reclaimed_snapshots = 0
 
     cutoff_date = datetime.utcnow() - timedelta(days=num_days)
-    click.confirm("Deleting snapshots older than %s. Do you want to continue?" % cutoff_date, abort=True)
+    if not noprompt:
+        click.confirm("Deleting snapshots older than %s. Do you want to continue?" % cutoff_date, abort=True)
 
-    volumes = cloudcore.get_volumes(partner_id)
+    volumes = cloudcore.get_volumes(partner_id, archive=archive)
     total = len(volumes)
     current = 1
     for volume in volumes:
         click.echo("Scanning volume %s of %s: ID %s" % (current, total, volume.id))
         current += 1
-        snapshots = cloudcore.get_snapshots(partner_id, volume.id)
+        snapshots = cloudcore.get_snapshots(partner_id, volume.id, archive=archive)
         if len(snapshots) == 0:
             empty_volumes += 1
             volumes_to_delete.append(volume)
@@ -59,8 +65,11 @@ def reclaim_space(partner_id, num_days):
             click.echo("Volume ID %s will be deleted because it has %s snapshots all of which are expired" % (volume.id, len(snapshots)))
             for snapshot in snapshots:
                 click.echo("Cleaning up metadata for snapshot ID %s of volume ID %s" % (snapshot.snap_version, volume.id))
-                cloudcfg.delete_snapshot(partner_id, snapshot.snap_version, volume.id)
-            expired_volumes += 1
+                if archive:
+                    archcfg.delete_snapshot(partner_id, snapshot.snap_version, volume.id)
+                else:
+                    cloudcfg.delete_snapshot(partner_id, snapshot.snap_version, volume.id)
+                expired_volumes += 1
             volumes_to_delete.append(volume)
         else:
             reclaimed_snapshots_for_volume = 0
@@ -69,7 +78,7 @@ def reclaim_space(partner_id, num_days):
                 if created_date < cutoff_date:
                     logger.info("Deleting snapshot %s" % snapshot.snap_version)
                     click.echo("Deleting expired snapshot ID %s of volume ID %s" % (snapshot.snap_version, volume.id))
-                    cloudcore.delete_snapshot(partner_id, snapshot.snap_version, volume.id, priority=None)
+                    cloudcore.delete_snapshot(partner_id, snapshot.snap_version, volume.id, priority=None, archive=archive)
                     reclaimed_snapshots += 1
                     reclaimed_snapshots_for_volume += 1
 
@@ -80,17 +89,25 @@ def reclaim_space(partner_id, num_days):
 
     total = len(volumes)
     current = 1
+    volume_delete_errors = 0
     for volume in volumes_to_delete:
         logger.info("Deleting volume %s" % volume.id)
         click.echo("Deleting volume %s of %s: ID %s" % (current, total, volume.id))
         current += 1
-        cloudcore.delete_volume(partner_id, volume.id)
+        try:
+            cloudcore.delete_volume(partner_id, volume.id, archive=archive)
+        except Exception as e:
+            logger.warning(e)
+            logger.warning("Failed to delete volume %s" % volume.id)
+            click.echo("Failed to delete volume %s. Continuing." % volume.id)
+            volume_delete_errors += 1
 
-    remaining_volumes = len(volumes)-len(volumes_to_delete)
-    msg = "Cleanup complete for partner ID %s. Reclaimed %s empty volumes. Reclaimed %s volumes with expired snapshots. " \
-          "There are %s remaining volumes. Created sessions to delete %s snapshots from %s volumes. " \
+    remaining_volumes = len(volumes)-len(volumes_to_delete)+volume_delete_errors
+    msg = "Cleanup complete for partner ID %s. Found %s empty volumes. Found %s volumes with expired snapshots. " \
+          "Failed to delete %s volumes. There are %s remaining volumes. " \
+          "Created sessions to delete %s snapshots from %s volumes. " \
           "Please monitor cloud sessions created to ensure that they complete successfully." % \
-          (partner_id, empty_volumes, expired_volumes, remaining_volumes,
+          (partner_id, empty_volumes, expired_volumes, volume_delete_errors, remaining_volumes,
            reclaimed_snapshots, volumes_with_reclaimed_snapshots)
     logger.info(msg)
     click.echo(msg)
