@@ -17,6 +17,7 @@ from vsnap.cloud import client as cloudclient
 CURRENT_VERISON = system.get_package_version("vsnap")
 VERSION_1016 = '10.1.6'
 VERSION_1015 = '10.1.5'
+VERSION_1014 = '10.1.4'
 
 cloudmdl = None
 archmdl = None
@@ -28,7 +29,7 @@ if VERSION_1016 in CURRENT_VERISON:
     from vsnap.archive import model as archmdl
     cloudcfg = cloudmdl.CloudConfig()
     archcfg = archmdl.ArchiveConfig()
-elif VERSION_1015 in CURRENT_VERISON:
+elif VERSION_1015 in CURRENT_VERISON or VERSION_1014 in CURRENT_VERISON:
     from vsnap.cloud import config as cloudcfg
     from vsnap.archive import config as archcfg
     cloudmdl = cloudcfg
