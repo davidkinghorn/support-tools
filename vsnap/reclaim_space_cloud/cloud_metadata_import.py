@@ -102,6 +102,10 @@ def catalog_consolidate(typecfg, tag_model, snapshot_model, volume_model, volume
         tags_data = cloudutil.get_metadata_object(client, const.CLOUD_TAGS_DIR+'/'+owner_system_id+'-')
         if tags_data:
             conn = sqlite_connect(typecfg)
+            # replace tags owner_system_id with this vsnap owner_system_id if global
+            if is_global:
+                for entry in tags_data['entries']:
+                    entry['owner_system_id'] = local_owner_system_id
             tags_updated = cloudutil.Importer(**get_tags_import_args(conn, volume_model, tag_model)).restore(tags_data)['updated']
             if tags_updated > 0:
                 click.echo("Restored %s tags for system ID %s" % (tags_updated, owner_system_id))
@@ -129,10 +133,12 @@ def catalog_consolidate(typecfg, tag_model, snapshot_model, volume_model, volume
         click.echo("Scanning metadata for volume ID %s" % volume_id)
         # get latest volume data
         volume_data = cloudutil.get_metadata_object(client, volume_id+'/'+const.CLOUD_VOLUMES_PREFIX)
-        
         # import volume metadata
         conn = sqlite_connect(typecfg)
         if volume_data:
+            # replace owner_system_id with this vsnap owner_system_id if global
+            if is_global:
+                volume_data['entries'][0]['owner_system_id'] = local_owner_system_id
             # only import if owner system id matches 
             if not is_global and volume_data['entries'][0]['owner_system_id'] != local_owner_system_id:
                 click.echo("Skipping volume ID %s because it is owned by another vSnap" % volume_id)
