@@ -1,4 +1,4 @@
-These scripts works on versions: 10.1.3, 10.1.4, 10.1.5.
+These scripts works on versions: 10.1.4, 10.1.5.
 
 Use these scripts to reclaim space in a cloud or repository server by deleting
 older snapshots that may have been left behind due to problems with the SPP
@@ -13,11 +13,15 @@ Temporarily remove existing metadata associated with all cloud partners:
 
     vsnap --detail cloud partner show | grep ^ID | awk '{print $2}' | while read partner; do echo "Removing partner $partner"; vsnap cloud partner remove --id $partner --noprompt; done
 
+Or for a specific partner only:
+
+    vsnap cloud partner remove --id <ID>
+
 Run the first script to import all cloud metadata from the bucket:
 
-    sudo ./cloud_metadata_import.py | tee -a import_output.log
+    sudo ./cloud_metadata_import.py --is_global | tee -a import_output.log
 
-Enter the endpoint details when prompted. Example:
+Enter the endpoint details of the cloud partner when prompted. Example:
 
     Endpoint URL: https://172.20.46.6:9000
     Access Key: ABC
@@ -45,4 +49,17 @@ The script queues snapshots for background deletion which are then
 handled by the vsnap-repl service. Depending on the number of objects
 queued for deletion, the service may take several hours or even days to
 work through the queue. Space reclamation occurs gradually as the objects
-are deleted.
+are deleted. The status of the deletion session can be monitored using:
+
+    vsnap cloud session show --action delete
+
+Once all deletion sessions are complete, remove the cloud partner:
+
+    vsnap cloud partner remove --id <ID>
+
+Then add it again, this time without the 'is_global' flag. This ensures
+that metadata associated only with the current vSnap is imported.
+
+    sudo ./cloud_metadata_import.py --is_global
+
+Enter the endpoint details of the cloud partner when prompted.
